@@ -1,0 +1,42 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query Supabase healthcheck
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          http_code="$(
+            curl --silent --show-error \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              --header "apikey: ${SUPABASE_ANON_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              "${SUPABASE_URL%/}/rest/v1/system_healthcheck?select=id&limit=1"
+          )"
+          case "$http_code" in
+            2??) ;;
+            *)
+              echo "Supabase keep-alive failed with HTTP status ${http_code}."
+              exit 1
+              ;;
+          esac
+          grep -Eq '"id"[[:space:]]*:[[:space:]]*1' "$response_file" || {
+            echo "Supabase keep-alive failed: expected healthcheck row was not returned."
+            exit 1
+          }
+          echo "Supabase keep-alive successful"
